@@ -901,3 +901,60 @@ func BenchmarkMapSessionDelta(b *testing.B) {
 		})
 	}
 }
+
+// tests mapResponseContainsNonPatchFields
+func TestMapResponseContainsNonPatchFields(t *testing.T) {
+
+	// reflectNonzero returns a non-zero value of the given type.
+	reflectNonzero := func(t reflect.Type) reflect.Value {
+
+		switch t.Kind() {
+		case reflect.Bool:
+			return reflect.ValueOf(true)
+		case reflect.String:
+			return reflect.ValueOf("foo").Convert(t)
+		case reflect.Int64:
+			return reflect.ValueOf(int64(1))
+		case reflect.Slice:
+			return reflect.MakeSlice(t, 1, 1)
+		case reflect.Ptr:
+			return reflect.New(t.Elem())
+		case reflect.Map:
+			return reflect.MakeMap(t)
+		}
+		panic(fmt.Sprintf("unhandled %v", t))
+	}
+
+	rt := reflect.TypeOf(tailcfg.MapResponse{})
+	for i := 0; i < rt.NumField(); i++ {
+		f := rt.Field(i)
+
+		var want bool
+		switch f.Name {
+		case "MapSessionHandle", "Seq", "KeepAlive", "PingRequest", "PopBrowserURL", "ControlTime":
+			// There are meta fields that apply to all MapResponse values.
+			// They should be ignored.
+			want = false
+		case "PeersChangedPatch", "PeerSeenChange", "OnlineChange":
+			// The actual three delta fields we care about handling.
+			want = false
+		default:
+			// Everything else should be conseratively handled as a
+			// non-delta field. We want it to return true so if
+			// the field is not listed in the function being tested,
+			// it'll return false and we'll fail this test.
+			// This makes sure any new fields added to MapResponse
+			// are accounted for here.
+			want = true
+		}
+
+		var v tailcfg.MapResponse
+		rv := reflect.ValueOf(&v).Elem()
+		rv.FieldByName(f.Name).Set(reflectNonzero(f.Type))
+
+		got := mapResponseContainsNonPatchFields(&v)
+		if got != want {
+			t.Errorf("field %q: got %v; want %v\nJSON: %v", f.Name, got, want, logger.AsJSON(v))
+		}
+	}
+}

@@ -194,8 +194,16 @@ func (ms *mapSession) HandleNonKeepAliveMapResponse(ctx context.Context, resp *t
 
 	ms.updateStateFromResponse(resp)
 
-	nm := ms.netmap()
+	if ms.tryHandleIncrementally(resp) {
+		ms.onConciseNetMapSummary(ms.lastNetmapSummary) // every 5s log
+		return nil
+	}
 
+	// We have to rebuild the whole netmap (lots of garbage & work downstream of
+	// our UpdateFullNetmap call). This is the part we tried to avoid but
+	// some field mutations (especially rare ones) aren't yet handled.
+
+	nm := ms.netmap()
 	ms.lastNetmapSummary = nm.VeryConcise()
 	ms.onConciseNetMapSummary(ms.lastNetmapSummary)
 
@@ -206,6 +214,71 @@ func (ms *mapSession) HandleNonKeepAliveMapResponse(ctx context.Context, resp *t
 
 	ms.nu.UpdateFullNetmap(nm)
 	return nil
+}
+
+// mapResponseContainsNonPatchFields reports whether res contains only "patch"
+// fields set (PeersChangedPatch primarily, but also including the legacy
+// PeerSeenChange and OnlineChange fields).
+//
+// It ignores any of the meta fields that are handled by PollNetMap before the
+// peer change handling gets involved.
+//
+// The purpose of this function is to ask whether this is a tricky enough
+// MapResponse to warrant a full netmap update. When this returns false, it
+// means the response can be handled incrementally, patching up the local state.
+func mapResponseContainsNonPatchFields(res *tailcfg.MapResponse) bool {
+	return res.Node != nil ||
+		res.DERPMap != nil ||
+		res.DNSConfig != nil ||
+		res.Domain != "" ||
+		res.CollectServices != "" ||
+		res.PacketFilter != nil ||
+		res.UserProfiles != nil ||
+		res.Health != nil ||
+		res.SSHPolicy != nil ||
+		res.TKAInfo != nil ||
+		res.DomainDataPlaneAuditLogID != "" ||
+		res.Debug != nil ||
+		res.ControlDialPlan != nil ||
+		res.ClientVersion != nil ||
+		res.Peers != nil ||
+		res.PeersRemoved != nil ||
+		// PeersChanged is too coarse to be considered a patch. Also, we convert
+		// PeersChanged to PeersChangedPatch in patchifyPeersChanged before this
+		// function is called, so it should never be set anyway. But for
+		// completedness, and for tests, check it too:
+		res.PeersChanged != nil
+}
+
+func (ms *mapSession) tryHandleIncrementally(res *tailcfg.MapResponse) bool {
+	nud, ok := ms.nu.(NetmapDeltaUpdater)
+	if !ok {
+		return false
+	}
+
+	if mapResponseContainsNonPatchFields(res) {
+		return false
+	}
+
+	// All that remains is PeersChangedPatch, OnlineChange, LastSeenChange
+	for _, p := range res.PeersChangedPatch {
+		deltas, ok := netmap.NodeMutationsFromPatch(p)
+		if !ok {
+			return false
+		}
+		for _, d := range deltas {
+			nud.UpdateNetmapDelta(d)
+		}
+	}
+	for nid, v := range res.OnlineChange {
+		nud.UpdateNetmapDelta(netmap.OnlineMutation(nid, v))
+	}
+	for nid, v := range res.PeerSeenChange {
+		if v {
+			nud.UpdateNetmapDelta(netmap.LastSeenNowMutation(nid))
+		}
+	}
+	return true
 }
 
 // updateStats are some stats from updateStateFromResponse, primarily for
