@@ -293,7 +293,10 @@ func toIPsOnly(resolvers []*dnstype.Resolver) (ret []netip.Addr) {
 // Query executes a DNS query received from the given address. The query is
 // provided in bs as a wire-encoded DNS query without any transport header.
 // This method is called for requests arriving over UDP and TCP.
-func (m *Manager) Query(ctx context.Context, bs []byte, from netip.AddrPort) ([]byte, error) {
+//
+// The "family" parameter should indicate what type of DNS query this is:
+// either "tcp" or "udp".
+func (m *Manager) Query(ctx context.Context, bs []byte, family string, from netip.AddrPort) ([]byte, error) {
 	select {
 	case <-m.ctx.Done():
 		return nil, net.ErrClosed
@@ -307,7 +310,7 @@ func (m *Manager) Query(ctx context.Context, bs []byte, from netip.AddrPort) ([]
 		return nil, errFullQueue
 	}
 	defer atomic.AddInt32(&m.activeQueriesAtomic, -1)
-	return m.resolver.Query(ctx, bs, from)
+	return m.resolver.Query(ctx, bs, family, from)
 }
 
 const (
@@ -369,7 +372,7 @@ func (s *dnsTCPSession) handleWrites() {
 }
 
 func (s *dnsTCPSession) handleQuery(q []byte) {
-	resp, err := s.m.Query(s.ctx, q, s.srcAddr)
+	resp, err := s.m.Query(s.ctx, q, "tcp", s.srcAddr)
 	if err != nil {
 		s.m.logf("tcp query: %v", err)
 		return

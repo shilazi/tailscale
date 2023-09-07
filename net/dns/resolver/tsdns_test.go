@@ -233,7 +233,7 @@ func unpackResponse(payload []byte) (dnsResponse, error) {
 }
 
 func syncRespond(r *Resolver, query []byte) ([]byte, error) {
-	return r.Query(context.Background(), query, netip.AddrPort{})
+	return r.Query(context.Background(), query, "udp", netip.AddrPort{})
 }
 
 func mustIP(str string) netip.Addr {
