@@ -783,49 +783,48 @@ func TestSrcTypeFromFlags(t *testing.T) {
 	tests := []struct {
 		name         string
 		env          *serveEnv
-		expectedType string
+		expectedType serveType
 		expectedPort uint16
 		expectedErr  bool
 	}{
 		{
 			name:         "only http set",
 			env:          &serveEnv{http: "80"},
-			expectedType: "http",
+			expectedType: httpListener,
 			expectedPort: 80,
 			expectedErr:  false,
 		},
 		{
 			name:         "only https set",
 			env:          &serveEnv{https: "10000"},
-			expectedType: "https",
+			expectedType: httpsListener,
 			expectedPort: 10000,
 			expectedErr:  false,
 		},
 		{
 			name:         "only tcp set",
 			env:          &serveEnv{tcp: "8000"},
-			expectedType: "tcp",
+			expectedType: tcpListener,
 			expectedPort: 8000,
 			expectedErr:  false,
 		},
 		{
 			name:         "only tls-terminated-tcp set",
 			env:          &serveEnv{tlsTerminatedTcp: "8080"},
-			expectedType: "tls-terminated-tcp",
+			expectedType: tlsTerminatedTcpListener,
 			expectedPort: 8080,
 			expectedErr:  false,
 		},
 		{
 			name:         "defaults to https, port 443",
 			env:          &serveEnv{},
-			expectedType: "https",
+			expectedType: httpsListener,
 			expectedPort: 443,
 			expectedErr:  false,
 		},
 		{
 			name:         "multiple types set",
 			env:          &serveEnv{http: "80", https: "443"},
-			expectedType: "",
 			expectedPort: 0,
 			expectedErr:  true,
 		},
@@ -838,10 +837,98 @@ func TestSrcTypeFromFlags(t *testing.T) {
 				t.Errorf("Expected error: %v, got: %v", tt.expectedErr, err)
 			}
 			if srcType != tt.expectedType {
-				t.Errorf("Expected srcType: %s, got: %s", tt.expectedType, srcType)
+				t.Errorf("Expected srcType: %s, got: %s", tt.expectedType.String(), srcType)
 			}
 			if srcPort != tt.expectedPort {
 				t.Errorf("Expected srcPort: %d, got: %d", tt.expectedPort, srcPort)
+			}
+		})
+	}
+}
+
+func TestExpandProxyTargetDev(t *testing.T) {
+	tests := []struct {
+		input         string
+		expected      string
+		expectedError string
+	}{
+		{input: "8080", expected: "http://127.0.0.1:8080"},
+		{input: "localhost:8080", expected: "http://127.0.0.1:8080"},
+		{input: "http://localhost:8080", expected: "http://127.0.0.1:8080"},
+		{input: "http://127.0.0.1:8080", expected: "http://127.0.0.1:8080"},
+		{input: "http://127.0.0.1:8080/foo", expected: "http://127.0.0.1:8080/foo"},
+		{input: "https://localhost:8080", expected: "https://127.0.0.1:8080"},
+		{input: "https+insecure://localhost:8080", expected: "https+insecure://127.0.0.1:8080"},
+
+		// errors
+		{input: "localhost:9999999", expectedError: `invalid port "9999999"`},
+		{input: "ftp://localhost:8080", expected: "", expectedError: "must be a URL starting with http://, https://, or https+insecure://"},
+		{input: "https://tailscale.com:8080", expected: "", expectedError: "only localhost or 127.0.0.1 proxies are currently supported"},
+		{input: "", expected: "", expectedError: `invalid port ""`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			actual, err := expandProxyTargetDev(tt.input)
+
+			if tt.expectedError != "" {
+				if err == nil {
+					t.Errorf("Expected an error but got none")
+					return
+				}
+				if err.Error() != tt.expectedError {
+					t.Errorf("Expected error message %q, got %q", tt.expectedError, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if actual != tt.expected {
+				t.Errorf("Got: %q; expected: %q", actual, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCleanURLPath(t *testing.T) {
+	tests := []struct {
+		input         string
+		expected      string
+		expectedError string
+	}{
+		{input: "", expected: "/"},
+		{input: "/", expected: "/"},
+		{input: "/foo", expected: "/foo"},
+		{input: "/foo/", expected: "/foo"},
+		{input: "//", expected: "/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			actual, err := cleanURLPath(tt.input)
+
+			if tt.expectedError != "" {
+				if err == nil {
+					t.Errorf("Expected an error but got none")
+					return
+				}
+				if err.Error() != tt.expectedError {
+					t.Errorf("Expected error message %q, got %q", tt.expectedError, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if actual != tt.expected {
+				t.Errorf("Got: %q; expected: %q", actual, tt.expected)
 			}
 		})
 	}
