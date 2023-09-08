@@ -9,28 +9,30 @@ package web
 import (
 	"crypto/tls"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+
+	"tailscale.com/tsweb"
 )
 
-// authorizeQNAP authenticates the logged-in QNAP user and verifies
-// that they are authorized to use the web client.  It returns true if the
-// request was handled and no further processing is required.
-func authorizeQNAP(w http.ResponseWriter, r *http.Request) (handled bool) {
+// authorizeQNAP authenticates the logged-in QNAP user and verifies that
+// they are authorized to use the web client.
+// It returns true if the request is authorized to continue, and false otherwise.
+// If false, an error may also be returned which should be reported to users.
+func authorizeQNAP(w http.ResponseWriter, r *http.Request) (ok bool, _ *tsweb.HTTPError) {
 	_, resp, err := qnapAuthn(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return true
+		return false, &tsweb.HTTPError{Err: err, Code: http.StatusUnauthorized}
 	}
 	if resp.IsAdmin == 0 {
-		http.Error(w, "user is not an admin", http.StatusForbidden)
-		return true
+		return false, &tsweb.HTTPError{Err: errors.New("user is not an admin"), Code: http.StatusForbidden}
 	}
 
-	return false
+	return true, nil
 }
 
 type qnapAuthResponse struct {

@@ -7,43 +7,43 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os/exec"
 	"strings"
 
+	"tailscale.com/tsweb"
 	"tailscale.com/util/groupmember"
 )
 
 // authorizeSynology authenticates the logged-in Synology user and verifies
-// that they are authorized to use the web client.  It returns true if the
-// request was handled and no further processing is required.
-func authorizeSynology(w http.ResponseWriter, r *http.Request) (handled bool) {
+// that they are authorized to use the web client.
+// It returns true if the request is authorized to continue, and false otherwise.
+// If false, an error may also be returned which should be reported to users.
+func authorizeSynology(w http.ResponseWriter, r *http.Request) (ok bool, _ *tsweb.HTTPError) {
 	if synoTokenRedirect(w, r) {
-		return true
+		return false, nil
 	}
 
 	// authenticate the Synology user
 	cmd := exec.Command("/usr/syno/synoman/webman/modules/authenticate.cgi")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("auth: %v: %s", err, out), http.StatusUnauthorized)
-		return true
+		return false, &tsweb.HTTPError{Err: fmt.Errorf("auth: %v: %s", err, out), Code: http.StatusUnauthorized}
 	}
 	user := strings.TrimSpace(string(out))
 
 	// check if the user is in the administrators group
 	isAdmin, err := groupmember.IsMemberOfGroup("administrators", user)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return true
+		return false, &tsweb.HTTPError{Err: err, Code: http.StatusForbidden}
 	}
 	if !isAdmin {
-		http.Error(w, "not a member of administrators group", http.StatusForbidden)
-		return true
+		return false, &tsweb.HTTPError{Err: errors.New("not a member of administrators group"), Code: http.StatusForbidden}
 	}
 
-	return false
+	return true, nil
 }
 
 func synoTokenRedirect(w http.ResponseWriter, r *http.Request) bool {
