@@ -17,6 +17,7 @@ import (
 	"tailscale.com/envknob"
 	"tailscale.com/ipn"
 	"tailscale.com/types/logger"
+	"tailscale.com/types/netmap"
 	"tailscale.com/util/clientmetric"
 	"tailscale.com/util/cmpx"
 	"tailscale.com/util/winutil"
@@ -206,7 +207,12 @@ func init() {
 // SetPrefs sets the current profile's prefs to the provided value.
 // It also saves the prefs to the StateStore. It stores a copy of the
 // provided prefs, which may be accessed via CurrentPrefs.
-func (pm *profileManager) SetPrefs(prefsIn ipn.PrefsView) error {
+//
+// If nm is provided non-nil, it will be used to enrich the profile
+// with the current self node's MagicDNS suffix. The MagicDNS suffix
+// cannot be pulled from prefsIn directly because it is not saved on
+// ipn.Prefs (since it's not a field that is configurable by nodes).
+func (pm *profileManager) SetPrefs(prefsIn ipn.PrefsView, nm *netmap.NetworkMap) error {
 	prefs := prefsIn.AsStruct()
 	newPersist := prefs.Persist
 	if newPersist == nil || newPersist.NodeID == "" || newPersist.UserProfile.LoginName == "" {
@@ -250,6 +256,9 @@ func (pm *profileManager) SetPrefs(prefsIn ipn.PrefsView) error {
 	cp.ControlURL = prefs.ControlURL
 	cp.UserProfile = newPersist.UserProfile
 	cp.NodeID = newPersist.NodeID
+	if nm != nil {
+		cp.TailnetMagicDNSName = nm.MagicDNSSuffix()
+	}
 	pm.knownProfiles[cp.ID] = cp
 	pm.currentProfile = cp
 	if err := pm.writeKnownProfiles(); err != nil {
@@ -589,7 +598,7 @@ func (pm *profileManager) migrateFromLegacyPrefs() error {
 		return fmt.Errorf("load legacy prefs: %w", err)
 	}
 	pm.dlogf("loaded legacy preferences; sentinel=%q", sentinel)
-	if err := pm.SetPrefs(prefs); err != nil {
+	if err := pm.SetPrefs(prefs, nil); err != nil {
 		metricMigrationError.Add(1)
 		return fmt.Errorf("migrating _daemon profile: %w", err)
 	}

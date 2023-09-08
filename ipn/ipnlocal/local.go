@@ -1032,7 +1032,7 @@ func (b *LocalBackend) SetControlClientStatus(c controlclient.Client, st control
 	// Perform all mutations of prefs based on the netmap here.
 	if prefsChanged {
 		// Prefs will be written out if stale; this is not safe unless locked or cloned.
-		if err := b.pm.SetPrefs(prefs.View()); err != nil {
+		if err := b.pm.SetPrefs(prefs.View(), st.NetMap); err != nil {
 			b.logf("Failed to save new controlclient state: %v", err)
 		}
 	}
@@ -1083,7 +1083,7 @@ func (b *LocalBackend) SetControlClientStatus(c controlclient.Client, st control
 			b.mu.Lock()
 			prefs.WantRunning = false
 			p := prefs.View()
-			if err := b.pm.SetPrefs(p); err != nil {
+			if err := b.pm.SetPrefs(p, st.NetMap); err != nil {
 				b.logf("Failed to save new controlclient state: %v", err)
 			}
 			b.mu.Unlock()
@@ -1372,7 +1372,7 @@ func (b *LocalBackend) Start(opts ipn.Options) error {
 		newPrefs := opts.UpdatePrefs.Clone()
 		newPrefs.Persist = oldPrefs.Persist().AsStruct()
 		pv := newPrefs.View()
-		if err := b.pm.SetPrefs(pv); err != nil {
+		if err := b.pm.SetPrefs(pv, b.netMap); err != nil {
 			b.logf("failed to save UpdatePrefs state: %v", err)
 		}
 		b.setAtomicValuesFromPrefsLocked(pv)
@@ -2290,7 +2290,7 @@ func (b *LocalBackend) migrateStateLocked(prefs *ipn.Prefs) (err error) {
 		// Backend owns the state, but frontend is trying to migrate
 		// state into the backend.
 		b.logf("importing frontend prefs into backend store; frontend prefs: %s", prefs.Pretty())
-		if err := b.pm.SetPrefs(prefs.View()); err != nil {
+		if err := b.pm.SetPrefs(prefs.View(), b.netMap); err != nil {
 			return fmt.Errorf("store.WriteState: %v", err)
 		}
 	}
@@ -2838,7 +2838,7 @@ func (b *LocalBackend) setPrefsLockedOnEntry(caller string, newp *ipn.Prefs) ipn
 	}
 
 	prefs := newp.View()
-	if err := b.pm.SetPrefs(prefs); err != nil {
+	if err := b.pm.SetPrefs(prefs, b.netMap); err != nil {
 		b.logf("failed to save new controlclient state: %v", err)
 	}
 	b.lastProfileID = b.pm.CurrentProfile().ID
