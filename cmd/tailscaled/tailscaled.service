@@ -6,11 +6,16 @@ After=network-pre.target NetworkManager.service systemd-resolved.service
 
 [Service]
 EnvironmentFile=/etc/default/tailscaled
-ExecStartPre=/usr/sbin/tailscaled --cleanup
-ExecStart=/usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port=${PORT} $FLAGS
-ExecStopPost=/usr/sbin/tailscaled --cleanup
+ExecStartPre=/usr/sbin/tailscaled --cleanup ${FLAGS}
+ExecStart=/usr/sbin/tailscaled \
+    --state=/var/lib/tailscale/tailscaled.state \
+    --socket=/run/tailscale/tailscaled.sock \
+    --port=${PORT} ${TUN} ${FLAGS}
+ExecStopPost=/usr/sbin/tailscaled --cleanup ${FLAGS}
 
 Restart=on-failure
+RestartSec=30s
+RestartPreventExitStatus=23
 
 RuntimeDirectory=tailscale
 RuntimeDirectoryMode=0755

@@ -3,6 +3,16 @@
 # but you might want to configure this in order to set external firewall
 # settings.
 PORT="41641"
+TUN="--tun=tailscale0"
 
 # Extra flags you might want to pass to tailscaled.
-FLAGS=""
+FLAGS="-no-logs-no-support"
+
+# Toy envVars for tailscaled
+TS_DEBUG_FIREWALL_MODE="auto"
+TS_DEBUG_ALWAYS_USE_DERP="false"
+TS_DEBUG_LINUX_SKIP_POLICY_ROUTING="false"
+
+# Toy envVars for tailscale up
+TS_DEBUG_NETFILTER_OFF="false"
+TS_DEBUG_LOGIN_SERVER="https://controlplane.tailscale.com"
