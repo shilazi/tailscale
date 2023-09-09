@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"tailscale.com/envknob"
 	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
@@ -88,6 +89,33 @@ func acceptRouteDefault(goos string) bool {
 	}
 }
 
+// loginServer return login server with envVar TS_DEBUG_LOGIN_SERVER
+// default ipn.DefaultControlURL
+func loginServer() string {
+	// custom url
+	rawURL := envknob.RegisterString("TS_DEBUG_LOGIN_SERVER")
+	parseURL, err := url.Parse(rawURL())
+	// example: https://x
+	if len(rawURL()) > 8 && err == nil && parseURL.Scheme == "https" {
+		return rawURL()
+	}
+
+	// default url
+	return ipn.DefaultControlURL
+}
+
+// netfilterMode return netfilter mode off with envVar TS_DEBUG_NETFILTER_OFF
+// default defaultNetfilterMode()
+func netfilterMode() string {
+	// custom off
+	off := envknob.RegisterBool("TS_DEBUG_NETFILTER_OFF")
+	if off() {
+		return "off"
+	}
+	// default netfilterMode
+	return defaultNetfilterMode()
+}
+
 var upFlagSet = newUpFlagSet(effectiveGOOS(), &upArgsGlobal, "up")
 
 // newUpFlagSet returns a new flag set for the "up" and "login" commands.
@@ -100,9 +128,9 @@ func newUpFlagSet(goos string, upArgs *upArgsT, cmd string) *flag.FlagSet {
 	upf.BoolVar(&upArgs.qr, "qr", false, "show QR code for login URLs")
 	upf.StringVar(&upArgs.authKeyOrFile, "auth-key", "", `node authorization key; if it begins with "file:", then it's a path to a file containing the authkey`)
 
-	upf.StringVar(&upArgs.server, "login-server", ipn.DefaultControlURL, "base URL of control server")
+	upf.StringVar(&upArgs.server, "login-server", loginServer(), "base URL of control server")
 	upf.BoolVar(&upArgs.acceptRoutes, "accept-routes", acceptRouteDefault(goos), "accept routes advertised by other Tailscale nodes")
-	upf.BoolVar(&upArgs.acceptDNS, "accept-dns", true, "accept DNS configuration from the admin panel")
+	upf.BoolVar(&upArgs.acceptDNS, "accept-dns", false, "accept DNS configuration from the admin panel")
 	upf.BoolVar(&upArgs.singleRoutes, "host-routes", true, "HIDDEN: install host routes to other Tailscale nodes")
 	upf.StringVar(&upArgs.exitNodeIP, "exit-node", "", "Tailscale exit node (IP or base name) for internet traffic, or empty string to not use an exit node")
 	upf.BoolVar(&upArgs.exitNodeAllowLANAccess, "exit-node-allow-lan-access", false, "Allow direct access to the local network when routing traffic via an exit node")
@@ -118,7 +146,7 @@ func newUpFlagSet(goos string, upArgs *upArgsT, cmd string) *flag.FlagSet {
 	switch goos {
 	case "linux":
 		upf.BoolVar(&upArgs.snat, "snat-subnet-routes", true, "source NAT traffic to local routes advertised with --advertise-routes")
-		upf.StringVar(&upArgs.netfilterMode, "netfilter-mode", defaultNetfilterMode(), "netfilter mode (one of on, nodivert, off)")
+		upf.StringVar(&upArgs.netfilterMode, "netfilter-mode", netfilterMode(), "netfilter mode (one of on, nodivert, off)")
 	case "windows":
 		upf.BoolVar(&upArgs.forceDaemon, "unattended", false, "run in \"Unattended Mode\" where Tailscale keeps running even after the current GUI user logs out (Windows-only)")
 	}
