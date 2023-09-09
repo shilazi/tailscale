@@ -434,8 +434,14 @@ func (r *linuxRouter) Up() error {
 	if r.unregNetMon == nil && r.netMon != nil {
 		r.unregNetMon = r.netMon.RegisterRuleDeleteCallback(r.onIPRuleDeleted)
 	}
-	if err := r.addIPRules(); err != nil {
-		return fmt.Errorf("adding IP rules: %w", err)
+	// for people who want manage ip rule/route themselves
+	skipPolicyRouting := envknob.RegisterBool("TS_DEBUG_LINUX_SKIP_POLICY_ROUTING")
+	if skipPolicyRouting() {
+		r.logf("skip execute [ip rule add]")
+	} else {
+		if err := r.addIPRules(); err != nil {
+			return fmt.Errorf("adding IP rules: %w", err)
+		}
 	}
 	if err := r.setNetfilterMode(netfilterOff); err != nil {
 		return fmt.Errorf("setting netfilter mode: %w", err)
@@ -455,14 +461,25 @@ func (r *linuxRouter) Close() error {
 	if err := r.downInterface(); err != nil {
 		return err
 	}
-	if err := r.delIPRules(); err != nil {
-		return err
+	// for people who want manage ip rule/route themselves
+	skipPolicyRouting := envknob.RegisterBool("TS_DEBUG_LINUX_SKIP_POLICY_ROUTING")
+	if skipPolicyRouting() {
+		r.logf("skip execute [ip rule del]")
+	} else {
+		if err := r.delIPRules(); err != nil {
+			return err
+		}
 	}
 	if err := r.setNetfilterMode(netfilterOff); err != nil {
 		return err
 	}
-	if err := r.delRoutes(); err != nil {
-		return err
+	// for people who want manage ip rule/route themselves
+	if skipPolicyRouting() {
+		r.logf("skip execute [ip route del]")
+	} else {
+		if err := r.delRoutes(); err != nil {
+			return err
+		}
 	}
 
 	r.addrs = nil
@@ -483,17 +500,23 @@ func (r *linuxRouter) Set(cfg *Config) error {
 		errs = append(errs, err)
 	}
 
-	newLocalRoutes, err := cidrDiff("localRoute", r.localRoutes, cfg.LocalRoutes, r.addThrowRoute, r.delThrowRoute, r.logf)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	r.localRoutes = newLocalRoutes
+	// for people who want manage ip rule/route themselves
+	skipPolicyRouting := envknob.RegisterBool("TS_DEBUG_LINUX_SKIP_POLICY_ROUTING")
+	if skipPolicyRouting() {
+		r.logf("skip execute [ip route add]")
+	} else {
+		newLocalRoutes, err := cidrDiff("localRoute", r.localRoutes, cfg.LocalRoutes, r.addThrowRoute, r.delThrowRoute, r.logf)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		r.localRoutes = newLocalRoutes
 
-	newRoutes, err := cidrDiff("route", r.routes, cfg.Routes, r.addRoute, r.delRoute, r.logf)
-	if err != nil {
-		errs = append(errs, err)
+		newRoutes, err := cidrDiff("route", r.routes, cfg.Routes, r.addRoute, r.delRoute, r.logf)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		r.routes = newRoutes
 	}
-	r.routes = newRoutes
 
 	newAddrs, err := cidrDiff("addr", r.addrs, cfg.LocalAddrs, r.addAddress, r.delAddress, r.logf)
 	if err != nil {
