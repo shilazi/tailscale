@@ -345,6 +345,20 @@ type probe struct {
 	wait time.Duration
 }
 
+// string return proto human-readable description
+// if address can't be found, then log print this function result
+func (p probeProto) string() string {
+	switch p {
+	case probeIPv4:
+		return "v4"
+	case probeIPv6:
+		return "v6"
+	case probeHTTPS:
+		return "https"
+	}
+	return "?"
+}
+
 // probePlan is a set of node probes to run.
 // The map key is a descriptive name, only used for tests.
 //
@@ -1506,7 +1520,7 @@ func (rs *reportState) runProbe(ctx context.Context, dm *tailcfg.DERPMap, probe 
 
 	addr := c.nodeAddr(ctx, node, probe.proto)
 	if !addr.IsValid() {
-		c.logf("netcheck.runProbe: named node %q has no address", probe.node)
+		c.logf("netcheck.runProbe: named node %q has no %s address", probe.node, probe.proto.string())
 		return
 	}
 
